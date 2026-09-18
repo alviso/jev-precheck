@@ -40,9 +40,10 @@ export function derive(tool: string, tc: ToolContract | undefined, contract: Con
         break;
       }
       case "state": {
-        const v = resolve(d.path, scope);
-        if (v === undefined) { say(null, `${d.label}: unknown (record not found)`); break; }
-        if (d.conflicts.includes(String(v))) say("state_conflict", `${d.label} is "${v}", which conflicts with this action`);
+        const raw = resolve(d.path, scope);
+        if (raw === undefined) { say(null, `${d.label}: unknown (record not found)`); break; }
+        const v = raw === 1 || raw === "1" || raw === true ? "true" : raw === 0 || raw === "0" || raw === false ? "false" : String(raw); // servers return booleans as 0/1 too
+        if (d.conflicts.includes(v)) say("state_conflict", `${d.label} is "${v}", which conflicts with this action`);
         else say(null, `${d.label}: "${v}"`);
         break;
       }

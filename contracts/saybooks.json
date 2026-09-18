@@ -2,7 +2,7 @@
   "server": {
     "url": "https://saybooks.io/mcp/<your-space-key>"
   },
-  "mode": "shadow",
+  "mode": "enforce",
   "thresholds": {
     "warn": 0.38,
     "hold": 0.7,
@@ -284,6 +284,163 @@
             "paid",
             "void"
           ]
+        }
+      ]
+    },
+    "solo_apply_payment": {
+      "write": true,
+      "context": [
+        {
+          "as": "invoice",
+          "tool": "solo_get_invoice",
+          "args": {
+            "invoice_id": "$args.invoice_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "state",
+          "path": "$ctx.invoice.status",
+          "label": "invoice status",
+          "conflicts": [
+            "paid",
+            "void",
+            "draft"
+          ]
+        },
+        {
+          "type": "compare",
+          "value": "$args.amount",
+          "against": "$ctx.invoice.open",
+          "label": "amount vs open balance",
+          "unit": "cents"
+        },
+        {
+          "type": "duplicate",
+          "keys": [
+            "payment_id",
+            "invoice_id"
+          ],
+          "windowMin": 1440
+        }
+      ]
+    },
+    "solo_record_payment": {
+      "write": true,
+      "context": [
+        {
+          "as": "customer",
+          "tool": "core_get_customer",
+          "args": {
+            "customer_id": "$args.customer_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "duplicate",
+          "keys": [
+            "customer_id",
+            "amount",
+            "reference"
+          ],
+          "windowMin": 1440
+        }
+      ]
+    },
+    "solo_draft_invoice": {
+      "write": true,
+      "context": [
+        {
+          "as": "customer",
+          "tool": "core_get_customer",
+          "args": {
+            "customer_id": "$args.customer_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "state",
+          "path": "$ctx.customer.on_hold",
+          "label": "customer on hold",
+          "conflicts": [
+            "true"
+          ]
+        }
+      ]
+    },
+    "solo_void_invoice": {
+      "write": true,
+      "context": [
+        {
+          "as": "invoice",
+          "tool": "solo_get_invoice",
+          "args": {
+            "invoice_id": "$args.invoice_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "required",
+          "path": "$args.reason",
+          "label": "reason"
+        },
+        {
+          "type": "state",
+          "path": "$ctx.invoice.status",
+          "label": "invoice status",
+          "conflicts": [
+            "paid",
+            "void"
+          ]
+        },
+        {
+          "type": "compare",
+          "value": "$ctx.invoice.applied",
+          "against": "$ctx.invoice.total",
+          "label": "cash already applied vs invoice total",
+          "unit": "cents"
+        }
+      ]
+    },
+    "core_set_credit_limit": {
+      "write": true,
+      "context": [
+        {
+          "as": "customer",
+          "tool": "core_get_customer",
+          "args": {
+            "customer_id": "$args.customer_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "required",
+          "path": "$args.reason",
+          "label": "reason"
+        },
+        {
+          "type": "compare",
+          "value": "$args.credit_limit",
+          "against": "$ctx.customer.credit_limit",
+          "label": "new limit vs current limit",
+          "unit": "cents"
+        }
+      ]
+    },
+    "core_create_customer": {
+      "write": true,
+      "derive": [
+        {
+          "type": "duplicate",
+          "keys": [
+            "name"
+          ],
+          "windowMin": 1440
         }
       ]
     }
