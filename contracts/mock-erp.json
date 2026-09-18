@@ -1,0 +1,354 @@
+{
+  "server": {
+    "command": "bun",
+    "args": [
+      "examples/mock-erp/server.ts"
+    ]
+  },
+  "mode": "enforce",
+  "thresholds": {
+    "warn": 0.38,
+    "hold": 0.7,
+    "selfAdvocating": 0.6
+  },
+  "reasonField": "_reason",
+  "duplicateWindowMin": 30,
+  "domain": "small specialty coffee wholesaler; amounts are integer cents",
+  "tools": {
+    "issue_invoice": {
+      "write": true,
+      "context": [
+        {
+          "as": "customer",
+          "tool": "get_customer",
+          "args": {
+            "customer_id": "$args.customer_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "compare",
+          "value": "$args.amount_cents",
+          "against": "$ctx.customer.typical_invoice_cents",
+          "label": "amount vs this customer's typical invoice",
+          "unit": "cents"
+        },
+        {
+          "type": "ceiling",
+          "value": "$args.amount_cents",
+          "max": "$ctx.customer.credit_limit_cents",
+          "label": "amount vs credit limit"
+        },
+        {
+          "type": "state",
+          "path": "$ctx.customer.on_hold",
+          "label": "customer on hold",
+          "conflicts": [
+            "true"
+          ]
+        },
+        {
+          "type": "duplicate",
+          "keys": [
+            "customer_id",
+            "amount_cents"
+          ],
+          "windowMin": 60
+        }
+      ]
+    },
+    "apply_payment": {
+      "write": true,
+      "context": [
+        {
+          "as": "invoice",
+          "tool": "get_invoice",
+          "args": {
+            "invoice_id": "$args.invoice_id"
+          }
+        },
+        {
+          "as": "payment",
+          "tool": "get_payment",
+          "args": {
+            "payment_id": "$args.payment_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "state",
+          "path": "$ctx.invoice.status",
+          "label": "invoice status",
+          "conflicts": [
+            "paid",
+            "void"
+          ]
+        },
+        {
+          "type": "match",
+          "a": "$ctx.payment.customer_id",
+          "b": "$ctx.invoice.customer_id",
+          "label": "payer vs invoice customer"
+        },
+        {
+          "type": "compare",
+          "value": "$args.amount_cents",
+          "against": "$ctx.invoice.balance_due_cents",
+          "label": "amount vs balance due",
+          "unit": "cents"
+        },
+        {
+          "type": "duplicate",
+          "keys": [
+            "payment_id",
+            "invoice_id"
+          ],
+          "windowMin": 1440
+        }
+      ]
+    },
+    "create_credit_note": {
+      "write": true,
+      "context": [
+        {
+          "as": "invoice",
+          "tool": "get_invoice",
+          "args": {
+            "invoice_id": "$args.invoice_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "required",
+          "path": "$args.reason",
+          "label": "reason"
+        },
+        {
+          "type": "ceiling",
+          "value": "$args.amount_cents",
+          "max": "$ctx.invoice.total_cents",
+          "label": "credit vs invoice total"
+        },
+        {
+          "type": "compare",
+          "value": "$args.amount_cents",
+          "against": "$ctx.invoice.total_cents",
+          "label": "credit vs invoice total",
+          "unit": "cents"
+        }
+      ]
+    },
+    "refund": {
+      "write": true,
+      "context": [
+        {
+          "as": "source",
+          "tool": "get_payment",
+          "args": {
+            "payment_id": "$args.source_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "ceiling",
+          "value": "$args.amount_cents",
+          "max": "$ctx.source.unapplied_cents",
+          "label": "refund vs unapplied balance"
+        },
+        {
+          "type": "prerequisite",
+          "tool": "create_credit_note",
+          "label": "credit note or return before refunding"
+        }
+      ]
+    },
+    "write_off": {
+      "write": true,
+      "context": [
+        {
+          "as": "invoice",
+          "tool": "get_invoice",
+          "args": {
+            "invoice_id": "$args.invoice_id"
+          }
+        },
+        {
+          "as": "customer",
+          "tool": "get_customer",
+          "args": {
+            "customer_id": "$ctx.invoice.customer_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "required",
+          "path": "$args.reason",
+          "label": "reason"
+        },
+        {
+          "type": "compare",
+          "value": "$ctx.invoice.balance_due_cents",
+          "against": "$ctx.customer.typical_invoice_cents",
+          "label": "balance written off vs typical invoice",
+          "unit": "cents"
+        },
+        {
+          "type": "state",
+          "path": "$ctx.invoice.status",
+          "label": "invoice status",
+          "conflicts": [
+            "paid",
+            "void"
+          ]
+        }
+      ]
+    },
+    "hold_customer": {
+      "write": true,
+      "context": [
+        {
+          "as": "customer",
+          "tool": "get_customer",
+          "args": {
+            "customer_id": "$args.customer_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "required",
+          "path": "$args.reason",
+          "label": "reason"
+        },
+        {
+          "type": "state",
+          "path": "$ctx.customer.on_hold",
+          "label": "customer on hold",
+          "conflicts": [
+            "true"
+          ]
+        }
+      ]
+    },
+    "release_customer": {
+      "write": true,
+      "context": [
+        {
+          "as": "customer",
+          "tool": "get_customer",
+          "args": {
+            "customer_id": "$args.customer_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "required",
+          "path": "$args.reason",
+          "label": "reason"
+        },
+        {
+          "type": "state",
+          "path": "$ctx.customer.on_hold",
+          "label": "customer on hold",
+          "conflicts": [
+            "false"
+          ]
+        }
+      ]
+    },
+    "ship_order": {
+      "write": true,
+      "context": [
+        {
+          "as": "order",
+          "tool": "get_order",
+          "args": {
+            "order_id": "$args.order_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "state",
+          "path": "$ctx.order.status",
+          "label": "order status",
+          "conflicts": [
+            "draft",
+            "shipped",
+            "cancelled"
+          ]
+        },
+        {
+          "type": "required",
+          "path": "$args.tracking",
+          "label": "tracking number"
+        }
+      ]
+    },
+    "set_price": {
+      "write": true,
+      "context": [
+        {
+          "as": "item",
+          "tool": "get_item",
+          "args": {
+            "item_id": "$args.item_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "compare",
+          "value": "$args.unit_price_cents",
+          "against": "$ctx.item.unit_price_cents",
+          "label": "new price vs current price",
+          "unit": "cents"
+        },
+        {
+          "type": "compare",
+          "value": "$args.unit_price_cents",
+          "against": "$ctx.item.cost_cents",
+          "label": "new price vs unit cost",
+          "unit": "cents"
+        }
+      ]
+    },
+    "receive_stock": {
+      "write": true,
+      "context": [
+        {
+          "as": "item",
+          "tool": "get_item",
+          "args": {
+            "item_id": "$args.item_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "compare",
+          "value": "$args.qty",
+          "against": "$ctx.item.typical_receipt_qty",
+          "label": "quantity vs typical receipt"
+        },
+        {
+          "type": "compare",
+          "value": "$args.qty",
+          "against": "$ctx.item.open_po_qty",
+          "label": "quantity vs open purchase orders"
+        },
+        {
+          "type": "required",
+          "path": "$args.note",
+          "label": "PO or count reference"
+        }
+      ]
+    }
+  }
+}

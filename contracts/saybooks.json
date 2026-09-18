@@ -1,0 +1,291 @@
+{
+  "server": {
+    "url": "https://saybooks.io/mcp/<your-space-key>"
+  },
+  "mode": "shadow",
+  "thresholds": {
+    "warn": 0.38,
+    "hold": 0.7,
+    "selfAdvocating": 0.6
+  },
+  "reasonField": "_reason",
+  "duplicateWindowMin": 30,
+  "domain": "a small company's books (Saybooks); money is integer cents",
+  "tools": {
+    "o2c_apply_payment": {
+      "write": true,
+      "context": [
+        {
+          "as": "invoice",
+          "tool": "o2c_get_invoice",
+          "args": {
+            "invoice_id": "$args.invoice_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "state",
+          "path": "$ctx.invoice.status",
+          "label": "invoice status",
+          "conflicts": [
+            "paid",
+            "void"
+          ]
+        },
+        {
+          "type": "compare",
+          "value": "$args.amount",
+          "against": "$ctx.invoice.balance_due",
+          "label": "amount vs balance due",
+          "unit": "cents"
+        },
+        {
+          "type": "duplicate",
+          "keys": [
+            "payment_id",
+            "invoice_id"
+          ],
+          "windowMin": 1440
+        }
+      ]
+    },
+    "o2c_record_payment": {
+      "write": true,
+      "context": [
+        {
+          "as": "customer",
+          "tool": "o2c_get_customer",
+          "args": {
+            "customer_id": "$args.customer_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "duplicate",
+          "keys": [
+            "customer_id",
+            "amount",
+            "reference"
+          ],
+          "windowMin": 1440
+        },
+        {
+          "type": "compare",
+          "value": "$args.amount",
+          "against": "$ctx.customer.open_balance",
+          "label": "payment vs customer's open balance",
+          "unit": "cents"
+        }
+      ]
+    },
+    "o2c_create_credit_note": {
+      "write": true,
+      "context": [
+        {
+          "as": "invoice",
+          "tool": "o2c_get_invoice",
+          "args": {
+            "invoice_id": "$args.invoice_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "required",
+          "path": "$args.reason",
+          "label": "reason"
+        },
+        {
+          "type": "ceiling",
+          "value": "$args.amount",
+          "max": "$ctx.invoice.total",
+          "label": "credit vs invoice total"
+        }
+      ]
+    },
+    "o2c_refund": {
+      "write": true,
+      "derive": [
+        {
+          "type": "duplicate",
+          "keys": [
+            "source_id",
+            "amount"
+          ],
+          "windowMin": 1440
+        }
+      ]
+    },
+    "o2c_write_off": {
+      "write": true,
+      "context": [
+        {
+          "as": "invoice",
+          "tool": "o2c_get_invoice",
+          "args": {
+            "invoice_id": "$args.invoice_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "required",
+          "path": "$args.reason",
+          "label": "reason"
+        },
+        {
+          "type": "state",
+          "path": "$ctx.invoice.status",
+          "label": "invoice status",
+          "conflicts": [
+            "paid",
+            "void"
+          ]
+        }
+      ]
+    },
+    "core_hold_customer": {
+      "write": true,
+      "context": [
+        {
+          "as": "customer",
+          "tool": "core_get_customer",
+          "args": {
+            "customer_id": "$args.customer_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "required",
+          "path": "$args.reason",
+          "label": "reason"
+        },
+        {
+          "type": "state",
+          "path": "$ctx.customer.on_hold",
+          "label": "customer on hold",
+          "conflicts": [
+            "true"
+          ]
+        }
+      ]
+    },
+    "core_release_customer": {
+      "write": true,
+      "context": [
+        {
+          "as": "customer",
+          "tool": "core_get_customer",
+          "args": {
+            "customer_id": "$args.customer_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "required",
+          "path": "$args.reason",
+          "label": "reason"
+        },
+        {
+          "type": "state",
+          "path": "$ctx.customer.on_hold",
+          "label": "customer on hold",
+          "conflicts": [
+            "false"
+          ]
+        }
+      ]
+    },
+    "o2c_ship_order": {
+      "write": true,
+      "context": [
+        {
+          "as": "order",
+          "tool": "o2c_get_order",
+          "args": {
+            "order_id": "$args.order_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "state",
+          "path": "$ctx.order.status",
+          "label": "order status",
+          "conflicts": [
+            "draft",
+            "quote",
+            "cancelled",
+            "closed"
+          ]
+        }
+      ]
+    },
+    "o2c_invoice_shipped": {
+      "write": true,
+      "context": [
+        {
+          "as": "order",
+          "tool": "o2c_get_order",
+          "args": {
+            "order_id": "$args.order_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "state",
+          "path": "$ctx.order.status",
+          "label": "order status",
+          "conflicts": [
+            "draft",
+            "quote",
+            "cancelled"
+          ]
+        }
+      ]
+    },
+    "core_set_price": {
+      "write": true,
+      "derive": []
+    },
+    "core_receive_stock": {
+      "write": true,
+      "derive": [
+        {
+          "type": "required",
+          "path": "$args.note",
+          "label": "PO or count reference"
+        }
+      ]
+    },
+    "solo_issue_invoice": {
+      "write": true,
+      "context": [
+        {
+          "as": "invoice",
+          "tool": "solo_get_invoice",
+          "args": {
+            "invoice_id": "$args.invoice_id"
+          }
+        }
+      ],
+      "derive": [
+        {
+          "type": "state",
+          "path": "$ctx.invoice.status",
+          "label": "invoice status",
+          "conflicts": [
+            "issued",
+            "paid",
+            "void"
+          ]
+        }
+      ]
+    }
+  }
+}
